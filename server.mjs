@@ -1,32 +1,16 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { emptyOrder, evolveOrder, otherSide, orderView, parties } from './src/order.js';
+import { bearerCode, issueNexconnToken, serviceConfig } from './src/service.js';
 
 const env = process.env;
 const staticRoot = fileURLToPath(new URL('./dist', import.meta.url));
-const appKey = env.NEXCONN_APP_KEY;
-const appSecret = env.NEXCONN_APP_SECRET;
-const regions = { sg: 'api.sg-light-api.com', us: 'api.us-light-api.com' };
-const region = env.NEXCONN_REGION ?? 'sg';
-const apiHost = Object.hasOwn(regions, region) ? regions[region] : null;
-const job = {
-  id: env.BATCH_ID || 'BC-1042',
-  title: env.BATCH_TITLE || 'Campus Fest tees',
-  buyer: env.BATCH_BUYER || parties.buyer.name,
-  shop: env.BATCH_SHOP || parties.shop.name,
-};
-const roles = {
-  buyer: { userId: env.NEXCONN_BUYER_ID, code: env.BUYER_ACCESS_CODE, name: job.buyer },
-  shop: { userId: env.NEXCONN_SHOP_ID, code: env.SHOP_ACCESS_CODE, name: job.shop },
-};
-const configured = Boolean(appKey && appSecret && apiHost && Object.values(roles).every(
-  ({ userId, code, name }) => /^[A-Za-z0-9]{16,64}$/.test(userId ?? '')
-    && /^[A-Za-z0-9_-]{24,120}$/.test(code ?? '') && name.length <= 64,
-) && roles.buyer.userId !== roles.shop.userId && roles.buyer.code !== roles.shop.code);
+const config = serviceConfig(env);
+const { appKey, region, job, roles, configured } = config;
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -95,34 +79,13 @@ async function readJson(request) {
 }
 
 function authenticate(request) {
-  const code = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{24,120})$/)?.[1];
+  const code = bearerCode(request.headers.authorization);
   if (!code) return null;
   const digest = (text) => createHash('sha256').update(text).digest();
   const supplied = digest(code);
   const buyer = timingSafeEqual(supplied, digest(roles.buyer.code));
   const shop = timingSafeEqual(supplied, digest(roles.shop.code));
   return buyer ? 'buyer' : shop ? 'shop' : null;
-}
-
-async function getToken(user) {
-  const nonce = randomBytes(8).toString('hex');
-  const timestamp = Date.now().toString();
-  const signature = createHash('sha1').update(appSecret + nonce + timestamp).digest('hex');
-  const response = await fetch(`https://${apiHost}/v4/auth/access-token/issue`, {
-    method: 'POST',
-    headers: {
-      'App-Key': appKey, Nonce: nonce, Timestamp: timestamp, Signature: signature,
-      'X-Request-ID': randomUUID(), 'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ userId: user.userId, name: user.name }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Nexconn HTTP ${response.status}`);
-  const { code, result } = await response.json();
-  if (code !== 0 || result?.userId !== user.userId || typeof result.accessToken !== 'string' || !result.accessToken) {
-    throw new Error('Nexconn refused the chat token.');
-  }
-  return result.accessToken;
 }
 
 export const server = createServer({ requestTimeout: 15_000, maxHeaderSize: 8192 }, async (request, response) => {
@@ -148,7 +111,7 @@ export const server = createServer({ requestTimeout: 15_000, maxHeaderSize: 8192
         }
         try {
           const { userId } = roles[side];
-          const token = await getToken(roles[side]);
+          const token = await issueNexconnToken(config, roles[side]);
           return json(response, 200, { side, userId, peerId: roles[otherSide(side)].userId, appKey, region, token, job });
         } catch {
           return json(response, 502, { error: 'Nexconn could not issue a chat token. Check the console credentials and region.' });

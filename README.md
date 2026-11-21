@@ -25,6 +25,12 @@ Open the [buyer inbox](http://127.0.0.1:4173/workspace/?inbox=buyer) and [print 
 
 Live mode uses the Nexconn Chat SDK to send and receive field-specific text messages and retrieve recent conversation history. The app server issues user tokens using the Nexconn Platform Chat API. The browser receives a token for its own role, and an explicit inbox link accepts only that role's code. SQLite stores durable readbacks, proposals, and approvals. Authenticated order updates stream to both inboxes, with polling as a fallback. The order API checks the revision on each write so two browsers cannot approve competing versions. Reopening a field clears previous approvals.
 
+## Hosted Worker
+
+The hosted build serves the same pages and API with the Worker in `hosting/worker.mjs`. Configure a D1 binding named `DB` and apply `drizzle/0000_orders.sql`. After building the browser app, bundle it with `node scripts/build-sites.mjs <output-directory>`; the output is a standalone `index.js` Worker. Set the Nexconn values and access codes in the hosting environment using the names from `.env.example`.
+
+The hosted order view checks the database for newer revisions. Conversation delivery still uses Nexconn Chat. GET `/api/health` reports database readiness and whether live chat is configured.
+
 ## Try it in under two minutes
 
 1. Start with the sample where the buyer entered 80 and the shop entered 60. For the live flow, start from blank and enter these values independently in the two roles. Use the same garment, print colour, and artwork for the other fields.
