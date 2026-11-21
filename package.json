@@ -1,0 +1,25 @@
+{
+  "name": "batchcheck",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@nexconn/chat": "26.5.1",
+    "@nexconn/engine": "26.5.1",
+    "lucide-react": "^1.77.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
